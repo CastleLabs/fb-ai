@@ -243,11 +243,6 @@ Built-in connection testing validates:
 - [ ] Backup procedures established for configuration
 - [ ] Error monitoring and alerting configured
 
-### Scaling Considerations
-- File-based rate limiting suitable for moderate traffic volumes
-- Consider database-backed rate limiting for high-volume deployments
-- Monitor disk space usage for log file growth
-- Implement log rotation and archival for long-term operation
 
 ## Troubleshooting Guide
 
