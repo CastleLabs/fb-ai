@@ -1,12 +1,12 @@
 {
     "ai_engine": {
-        "url": "https:\/\/thecastlefuncenter.com\/wp-json\/mwai\/v1\/simpleChatbotQuery",
+        "url": "https:\/\/yourwordpress.com\/wp-json\/mwai\/v1\/simpleChatbotQuery",
         "bearer_token": "Bearer Token",
         "bot_id": "default",
         "timeout": 25
     },
     "facebook": {
-        "verify_token": "castle_fun_verify_2025",
+        "verify_token": "FB_Verify_Token",
         "page_access_token": "EAAB...",
         "app_secret": "your_app_secret_here",
         "api_version": "v18.0"
