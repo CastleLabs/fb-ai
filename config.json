@@ -1,0 +1,36 @@
+{
+    "ai_engine": {
+        "url": "https:\/\/thecastlefuncenter.com\/wp-json\/mwai\/v1\/simpleChatbotQuery",
+        "bearer_token": "Bearer Token",
+        "bot_id": "default",
+        "timeout": 25
+    },
+    "facebook": {
+        "verify_token": "castle_fun_verify_2025",
+        "page_access_token": "EAAB...",
+        "app_secret": "your_app_secret_here",
+        "api_version": "v18.0"
+    },
+    "settings": {
+        "enable_logging": true,
+        "log_file_prefix": "fb_ai",
+        "message_char_limit": 1900,
+        "max_retries": 3,
+        "rate_limit_messages": 20,
+        "rate_limit_window": 60,
+        "admin_password": "hashed password"
+    },
+    "prompts": {
+        "knowledge_base_instruction": "IMPORTANT: Only answer questions from the knowledge base. Do not answer questions that are not related to the castle fun center or your knowledge base. ",
+        "welcome_message": "This is a demo messenger conversation.",
+        "error_message": "We are currently unavailable. Please try again or contact Castle Fun Center directly at 845-469-2116.",
+        "text_only_message": "I can only handle text messages right now. Please send me a text message!",
+        "truncated_message": "... (message truncated)"
+    },
+    "contact": {
+        "business_name": "Castle Fun Center",
+        "phone": "845-469-2116",
+        "email": "thecastle@thecastlefuncenter.com",
+        "website": "https:\/\/thecastlefuncenter.com"
+    }
+}
