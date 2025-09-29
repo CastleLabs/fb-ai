@@ -1,61 +1,106 @@
 <?php
 /**
- * Facebook Messenger AI Integration
- * Main webhook handler - reads configuration from config.json
+ * Facebook Messenger AI Integration - Main Webhook Handler
+ * 
+ * VERSION: 2.3 - Production-Ready with Enhanced Error Handling
+ * FIXES:
+ * - Removed error suppression for better debugging
+ * - Added fastcgi_finish_request() availability check
+ * - Enhanced error logging with detailed context
+ * - Improved file permission checks
+ * - Better error messages for troubleshooting
+ * 
+ * @package FacebookMessengerAI
+ * @author Seth Morrow
+ * @copyright 2025 Castle Fun Center
+ * @license MIT
  */
 
-// Load configuration
+// ============================================================================
+// ENVIRONMENT CHECK
+// ============================================================================
+
+/**
+ * Check if fastcgi_finish_request() is available
+ * This is CRITICAL for responding to Facebook within 20 seconds
+ */
+if (!function_exists('fastcgi_finish_request')) {
+    error_log('WARNING: fastcgi_finish_request() not available. Server may timeout with Facebook. Consider using PHP-FPM.');
+}
+
+// ============================================================================
+// INITIALIZATION
+// ============================================================================
+
 $config = load_config();
 if (!$config) {
     http_response_code(500);
     die('Configuration error. Please check config.json');
 }
 
-// Rate limiting storage
-session_start();
+// ============================================================================
+// WEBHOOK VERIFICATION (GET REQUEST)
+// ============================================================================
 
-// ============= WEBHOOK VERIFICATION =============
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {
-    // Facebook webhook verification
     $hub_verify_token = $_GET['hub_verify_token'] ?? '';
     $hub_challenge = $_GET['hub_challenge'] ?? '';
     $hub_mode = $_GET['hub_mode'] ?? '';
     
     if ($hub_mode === 'subscribe' && $hub_verify_token === $config['facebook']['verify_token']) {
-        log_message("Webhook verified successfully", $config);
+        log_message("✓ Webhook verified successfully", $config);
         echo $hub_challenge;
         exit;
     } else {
-        log_message("Webhook verification failed", $config);
+        log_message("✗ Webhook verification failed. Token mismatch.", $config);
+        log_message("Expected: " . $config['facebook']['verify_token'] . " | Received: " . $hub_verify_token, $config);
         http_response_code(403);
         echo 'Forbidden';
         exit;
     }
 }
 
-// ============= WEBHOOK MESSAGE HANDLING =============
+// ============================================================================
+// WEBHOOK MESSAGE HANDLING (POST REQUEST)
+// ============================================================================
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $input = file_get_contents('php://input');
     
-    // Verify Facebook signature
+    // ========================================================================
+    // SECURITY: Verify Facebook Signature
+    // ========================================================================
+    
     if (!verify_facebook_signature($input, $config['facebook']['app_secret'])) {
-        log_message("Invalid Facebook signature", $config);
+        log_message("✗ Invalid Facebook signature - possible security breach attempt", $config);
         http_response_code(401);
         echo 'Unauthorized';
         exit;
     }
     
-    // Respond quickly to Facebook
+    // ========================================================================
+    // QUICK RESPONSE: Tell Facebook we received the webhook
+    // ========================================================================
+    
     http_response_code(200);
     echo 'OK';
     
-    // Process in background if possible
     if (function_exists('fastcgi_finish_request')) {
         fastcgi_finish_request();
+    } else {
+        log_message("⚠ WARNING: Processing without fastcgi_finish_request - may cause timeouts", $config);
     }
     
-    // Parse the webhook data
+    // ========================================================================
+    // PROCESS WEBHOOK DATA
+    // ========================================================================
+    
     $data = json_decode($input, true);
+    
+    if (json_last_error() !== JSON_ERROR_NONE) {
+        log_message("✗ Invalid JSON received from Facebook: " . json_last_error_msg(), $config);
+        exit;
+    }
     
     if (isset($data['entry'])) {
         foreach ($data['entry'] as $entry) {
@@ -66,35 +111,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
     }
+    
     exit;
 }
 
-// ============= CORE FUNCTIONS =============
+// ============================================================================
+// CORE FUNCTIONS
+// ============================================================================
 
-/**
- * Load configuration from JSON file
- */
 function load_config() {
     $config_file = __DIR__ . '/config.json';
+    
     if (!file_exists($config_file)) {
-        // Create default config if doesn't exist
+        error_log("ERROR: config.json not found at: " . $config_file);
         $default_config = get_default_config();
-        file_put_contents($config_file, json_encode($default_config, JSON_PRETTY_PRINT));
+        
+        if (file_put_contents($config_file, json_encode($default_config, JSON_PRETTY_PRINT)) === false) {
+            error_log("ERROR: Could not create config.json. Check directory permissions.");
+            return false;
+        }
+        
         return $default_config;
     }
     
     $config = json_decode(file_get_contents($config_file), true);
+    
     if (json_last_error() !== JSON_ERROR_NONE) {
-        error_log("Invalid JSON in config.json: " . json_last_error_msg());
+        error_log("ERROR: Invalid JSON in config.json: " . json_last_error_msg());
         return false;
     }
     
     return $config;
 }
 
-/**
- * Get default configuration
- */
 function get_default_config() {
     return [
         'ai_engine' => [
@@ -116,6 +165,9 @@ function get_default_config() {
             'max_retries' => 3,
             'rate_limit_messages' => 20,
             'rate_limit_window' => 60,
+            'show_processing_message' => true,
+            'processing_message' => '⌛ Just a moment...',
+            'processing_message_min_length' => 0,
             'admin_password' => password_hash('changeme', PASSWORD_DEFAULT)
         ],
         'prompts' => [
@@ -134,70 +186,93 @@ function get_default_config() {
     ];
 }
 
-/**
- * Process incoming message
- */
 function process_message($messaging_event, $config) {
     $sender_id = $messaging_event['sender']['id'] ?? null;
     
-    if (!$sender_id) return;
-    
-    // Check rate limiting
-    if (!check_rate_limit($sender_id, $config)) {
-        send_facebook_message($sender_id, "Please slow down! Too many messages.", $config);
+    if (!$sender_id) {
+        log_message("✗ No sender ID found in messaging event", $config);
         return;
     }
     
-    // Handle messages
+    // ========================================================================
+    // RATE LIMITING
+    // ========================================================================
+    
+    if (!check_rate_limit($sender_id, $config)) {
+        send_facebook_message($sender_id, "Please slow down! Too many messages.", $config);
+        log_message("✗ Rate limit exceeded for user $sender_id", $config);
+        return;
+    }
+    
+    // ========================================================================
+    // HANDLE TEXT MESSAGES
+    // ========================================================================
+    
     if (isset($messaging_event['message'])) {
         $message = $messaging_event['message'];
         
-        // Skip echo messages
         if (isset($message['is_echo']) && $message['is_echo']) {
             return;
         }
         
         $user_text = $message['text'] ?? '';
         
-        // Handle attachments
         if (empty($user_text) && isset($message['attachments'])) {
             send_facebook_message($sender_id, $config['prompts']['text_only_message'], $config);
+            log_message("User $sender_id sent attachment - text-only response sent", $config);
             return;
         }
         
-        if (empty($user_text)) return;
+        if (empty($user_text)) {
+            return;
+        }
         
         log_message("Received from $sender_id: " . substr($user_text, 0, 100), $config);
         
-        // Show typing
-        send_typing_indicator($sender_id, true, $config);
+        // Send immediate acknowledgment
+        send_sender_action($sender_id, 'mark_seen', $config);
+        
+        // Determine if processing message should be shown
+        $show_processing = $config['settings']['show_processing_message'] ?? true;
+        $min_length = $config['settings']['processing_message_min_length'] ?? 0;
+        
+        if ($show_processing && strlen($user_text) >= $min_length) {
+            send_facebook_message($sender_id, $config['settings']['processing_message'], $config);
+            log_message("Processing message sent to $sender_id (query length: " . strlen($user_text) . ")", $config);
+        }
         
         // Get AI response
+        $start_time = microtime(true);
         $ai_response = get_ai_response($user_text, $sender_id, $config);
+        $elapsed = round(microtime(true) - $start_time, 2);
         
-        // Stop typing
-        send_typing_indicator($sender_id, false, $config);
+        log_message("AI response time: {$elapsed}s for user $sender_id", $config);
         
-        // Send response
+        // Send final response
         if ($ai_response) {
             send_facebook_message($sender_id, $ai_response, $config);
             log_message("Sent to $sender_id: " . substr($ai_response, 0, 100), $config);
         } else {
             send_facebook_message($sender_id, $config['prompts']['error_message'], $config);
-            log_message("Failed to get AI response for $sender_id", $config);
+            log_message("✗ Failed to get AI response for $sender_id", $config);
         }
     }
     
-    // Handle postbacks
+    // ========================================================================
+    // HANDLE POSTBACK BUTTONS
+    // ========================================================================
+    
     if (isset($messaging_event['postback'])) {
         $payload = $messaging_event['postback']['payload'] ?? '';
+        
+        log_message("Postback received from $sender_id: $payload", $config);
         
         switch ($payload) {
             case 'GET_STARTED':
                 send_facebook_message($sender_id, $config['prompts']['welcome_message'], $config);
                 break;
+                
             default:
-                // Process as regular message
                 process_message([
                     'sender' => ['id' => $sender_id],
                     'message' => ['text' => $payload]
@@ -206,17 +281,17 @@ function process_message($messaging_event, $config) {
     }
 }
 
-/**
- * Get AI response
- */
 function get_ai_response($user_text, $sender_id, $config) {
     $enhanced_prompt = $user_text . $config['prompts']['knowledge_base_instruction'];
+    $chat_id = 'fb_' . $sender_id;
     
     $data = [
         'prompt' => $enhanced_prompt,
         'botId' => $config['ai_engine']['bot_id'],
-        'memoryId' => 'fb_' . $sender_id  // Session per user
+        'chatId' => $chat_id
     ];
+    
+    log_message("AI Request for user $sender_id | Chat ID: $chat_id | Message: " . substr($user_text, 0, 50), $config);
     
     $options = [
         'http' => [
@@ -226,42 +301,71 @@ function get_ai_response($user_text, $sender_id, $config) {
             ],
             'method' => 'POST',
             'content' => json_encode($data),
-            'timeout' => $config['ai_engine']['timeout']
+            'timeout' => $config['ai_engine']['timeout'],
+            'ignore_errors' => true  // Get response even on HTTP errors
         ]
     ];
     
-    // Retry logic
+    // ========================================================================
+    // Retry Logic with Better Error Reporting
+    // ========================================================================
+    
     for ($i = 0; $i < $config['settings']['max_retries']; $i++) {
         $context = stream_context_create($options);
-        $response = @file_get_contents($config['ai_engine']['url'], false, $context);
+        $response = file_get_contents($config['ai_engine']['url'], false, $context);
+        
+        // Check HTTP response code
+        if (isset($http_response_header)) {
+            $status_line = $http_response_header[0];
+            preg_match('{HTTP\/\S*\s(\d{3})}', $status_line, $match);
+            $status_code = $match[1] ?? 'unknown';
+            
+            if ($status_code != 200) {
+                log_message("✗ AI Engine returned HTTP $status_code (attempt " . ($i + 1) . ")", $config);
+                log_message("Response: " . substr($response, 0, 200), $config);
+            }
+        }
         
         if ($response !== FALSE) {
             $result = json_decode($response, true);
             
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                log_message("✗ Invalid JSON from AI Engine: " . json_last_error_msg(), $config);
+                log_message("Raw response: " . substr($response, 0, 200), $config);
+                continue;
+            }
+            
             if (!empty($result['data']) && is_string($result['data'])) {
                 $ai_reply = $result['data'];
                 
-                // Truncate if needed
                 if (strlen($ai_reply) > $config['settings']['message_char_limit']) {
                     $ai_reply = substr($ai_reply, 0, $config['settings']['message_char_limit']) 
                               . ' ' . $config['prompts']['truncated_message'];
+                    log_message("Response truncated for $sender_id", $config);
                 }
                 
                 return $ai_reply;
+            } else {
+                log_message("✗ Invalid AI response format for $sender_id", $config);
+                log_message("Response structure: " . json_encode($result), $config);
             }
+        } else {
+            $error = error_get_last();
+            log_message("✗ AI Engine request failed (attempt " . ($i + 1) . "): " 
+                       . ($error['message'] ?? 'Unknown error'), $config);
         }
         
         if ($i < $config['settings']['max_retries'] - 1) {
-            sleep(1); // Brief delay before retry
+            $wait_time = pow(2, $i);
+            log_message("Waiting {$wait_time}s before retry...", $config);
+            sleep($wait_time);
         }
     }
     
+    log_message("✗ All retry attempts exhausted for user $sender_id", $config);
     return null;
 }
 
-/**
- * Send Facebook message
- */
 function send_facebook_message($recipient_id, $message_text, $config) {
     $url = 'https://graph.facebook.com/' . $config['facebook']['api_version'] 
          . '/me/messages?access_token=' . urlencode($config['facebook']['page_access_token']);
@@ -276,28 +380,38 @@ function send_facebook_message($recipient_id, $message_text, $config) {
             'header' => 'Content-Type: application/json',
             'method' => 'POST',
             'content' => json_encode($data),
-            'timeout' => 10
+            'timeout' => 10,
+            'ignore_errors' => true
         ]
     ];
     
     $context = stream_context_create($options);
-    $response = @file_get_contents($url, false, $context);
+    $response = file_get_contents($url, false, $context);
     
     if ($response === FALSE) {
-        log_message("Failed to send message to $recipient_id", $config);
+        $error = error_get_last();
+        log_message("✗ Failed to send message to $recipient_id: " 
+                   . ($error['message'] ?? 'Unknown error'), $config);
+        return false;
     }
+    
+    // Check for Facebook API errors
+    $result = json_decode($response, true);
+    if (isset($result['error'])) {
+        log_message("✗ Facebook API error: " . json_encode($result['error']), $config);
+        return false;
+    }
+    
+    return true;
 }
 
-/**
- * Send typing indicator
- */
-function send_typing_indicator($recipient_id, $typing_on, $config) {
+function send_sender_action($recipient_id, $action, $config) {
     $url = 'https://graph.facebook.com/' . $config['facebook']['api_version'] 
          . '/me/messages?access_token=' . urlencode($config['facebook']['page_access_token']);
     
     $data = [
         'recipient' => ['id' => $recipient_id],
-        'sender_action' => $typing_on ? 'typing_on' : 'typing_off'
+        'sender_action' => $action
     ];
     
     $options = [
@@ -305,21 +419,29 @@ function send_typing_indicator($recipient_id, $typing_on, $config) {
             'header' => 'Content-Type: application/json',
             'method' => 'POST',
             'content' => json_encode($data),
-            'timeout' => 5
+            'timeout' => 5,
+            'ignore_errors' => true
         ]
     ];
     
     $context = stream_context_create($options);
-    @file_get_contents($url, false, $context);
+    $response = file_get_contents($url, false, $context);
+    
+    if ($response === FALSE) {
+        $error = error_get_last();
+        log_message("✗ Failed to send $action to $recipient_id: " 
+                   . ($error['message'] ?? 'Unknown error'), $config);
+        return false;
+    }
+    
+    return true;
 }
 
-/**
- * Verify Facebook signature
- */
 function verify_facebook_signature($payload, $app_secret) {
     $signature = $_SERVER['HTTP_X_HUB_SIGNATURE_256'] ?? '';
     
     if (empty($signature)) {
+        error_log("ERROR: No X-Hub-Signature-256 header found in request");
         return false;
     }
     
@@ -328,52 +450,85 @@ function verify_facebook_signature($payload, $app_secret) {
     return hash_equals($expected_signature, $signature);
 }
 
-/**
- * Rate limiting
- */
 function check_rate_limit($sender_id, $config) {
-    $key = 'rate_limit_' . $sender_id;
+    $cache_dir = __DIR__ . '/rate_limit_cache';
+    
+    if (!is_dir($cache_dir)) {
+        if (!mkdir($cache_dir, 0755, true)) {
+            log_message("✗ Failed to create rate limit cache directory - check permissions", $config);
+            return true;  // Fail open
+        }
+    }
+    
+    // Verify directory is writable
+    if (!is_writable($cache_dir)) {
+        log_message("✗ Rate limit cache directory not writable - check permissions", $config);
+        return true;  // Fail open
+    }
+    
+    $safe_sender_id = preg_replace('/[^a-zA-Z0-9_-]/', '', $sender_id);
+    $file_path = $cache_dir . '/' . $safe_sender_id . '.json';
+    
     $now = time();
     $window = $config['settings']['rate_limit_window'];
     $max_messages = $config['settings']['rate_limit_messages'];
     
-    if (!isset($_SESSION[$key])) {
-        $_SESSION[$key] = ['count' => 0, 'window_start' => $now];
+    $timestamps = [];
+    if (file_exists($file_path)) {
+        $content = file_get_contents($file_path);
+        if ($content !== false) {
+            $timestamps = json_decode($content, true) ?: [];
+        }
     }
     
-    $rate_data = &$_SESSION[$key];
+    $timestamps = array_filter($timestamps, function($timestamp) use ($now, $window) {
+        return ($now - $timestamp) < $window;
+    });
     
-    // Reset window if expired
-    if ($now - $rate_data['window_start'] > $window) {
-        $rate_data = ['count' => 1, 'window_start' => $now];
-        return true;
-    }
-    
-    // Check limit
-    if ($rate_data['count'] >= $max_messages) {
+    if (count($timestamps) >= $max_messages) {
+        log_message("✗ Rate limit exceeded for user $sender_id (" 
+                   . count($timestamps) . "/$max_messages messages)", $config);
         return false;
     }
     
-    $rate_data['count']++;
+    $timestamps[] = $now;
+    $success = file_put_contents($file_path, json_encode(array_values($timestamps)), LOCK_EX);
+    
+    if ($success === false) {
+        log_message("✗ Failed to write rate limit data for user $sender_id - check file permissions", $config);
+        return true;  // Fail open
+    }
+    
     return true;
 }
 
-/**
- * Logging
- */
 function log_message($message, $config) {
     if (!$config['settings']['enable_logging']) {
         return;
     }
     
     $log_file = __DIR__ . '/' . $config['settings']['log_file_prefix'] . '_' . date('Y-m-d') . '.log';
+    
+    // Check if directory is writable
+    if (!is_writable(__DIR__)) {
+        error_log("ERROR: Cannot write logs - directory not writable: " . __DIR__);
+        return;
+    }
+    
     $timestamp = date('Y-m-d H:i:s');
     $log_entry = "[$timestamp] $message" . PHP_EOL;
     
-    @file_put_contents($log_file, $log_entry, FILE_APPEND | LOCK_EX);
+    $result = file_put_contents($log_file, $log_entry, FILE_APPEND | LOCK_EX);
+    
+    if ($result === false) {
+        error_log("ERROR: Failed to write to log file: " . $log_file);
+    }
 }
 
-// If accessed directly, show status
+// ============================================================================
+// DIRECT ACCESS HANDLING
+// ============================================================================
+
 if ($_SERVER['REQUEST_METHOD'] === 'GET' && !isset($_GET['hub_mode'])) {
     header('Location: config-editor.php');
     exit;

@@ -1,36 +1,39 @@
 {
     "ai_engine": {
-        "url": "https:\/\/yourwordpress.com\/wp-json\/mwai\/v1\/simpleChatbotQuery",
-        "bearer_token": "Bearer Token",
+        "url": "https://yourdomain.com/wp-json/mwai/v1/simpleChatbotQuery",
+        "bearer_token": "REPLACE_WITH_YOUR_AI_ENGINE_BEARER_TOKEN",
         "bot_id": "default",
-        "timeout": 25
+        "timeout": 60
     },
     "facebook": {
-        "verify_token": "FB_Verify_Token",
-        "page_access_token": "EAAB...",
-        "app_secret": "your_app_secret_here",
+        "verify_token": "REPLACE_WITH_CUSTOM_VERIFY_TOKEN",
+        "page_access_token": "REPLACE_WITH_FACEBOOK_PAGE_ACCESS_TOKEN",
+        "app_secret": "REPLACE_WITH_FACEBOOK_APP_SECRET",
         "api_version": "v18.0"
     },
     "settings": {
         "enable_logging": true,
         "log_file_prefix": "fb_ai",
         "message_char_limit": 1900,
-        "max_retries": 3,
+        "max_retries": 5,
         "rate_limit_messages": 20,
         "rate_limit_window": 60,
-        "admin_password": "hashed password"
+        "show_processing_message": true,
+        "processing_message": "\u231b Just a moment...",
+        "processing_message_min_length": 0,
+        "admin_password": "$2y$10$8pmjUtrgYwZYfav2Uk63Q.ZpzTI0I7oDkl4jhcnGZQ5i.cRNKkqY."
     },
     "prompts": {
-        "knowledge_base_instruction": "IMPORTANT: Only answer questions from the knowledge base. Do not answer questions that are not related to the castle fun center or your knowledge base. ",
+        "knowledge_base_instruction": "IMPORTANT BOT INSTRUCTIONS: Please respond ONLY using information from your knowledge base. Craft a response formatted for facebook messenger that answers the customers questions succinctly, in a cheerful manner. ALWAYS check the current schedule and REAL CURRENT DATE AND TIME before suggesting a customer visits the facility. We do not want to invite customers to visit on days we are closed. ALWAYS REMEMBER to keep it formatted for messenger, not to use markdown links, and only send CLEAN URLS!",
         "welcome_message": "This is a demo messenger conversation.",
-        "error_message": "We are currently unavailable. Please try again or contact Castle Fun Center directly at 845-469-2116.",
+        "error_message": "We are currently unavailable. Please try again or contact us directly at the phone number below.",
         "text_only_message": "I can only handle text messages right now. Please send me a text message!",
         "truncated_message": "... (message truncated)"
     },
     "contact": {
-        "business_name": "Castle Fun Center",
-        "phone": "845-469-2116",
-        "email": "thecastle@thecastlefuncenter.com",
-        "website": "https:\/\/thecastlefuncenter.com"
+        "business_name": "Your Business Name",
+        "phone": "555-123-4567",
+        "email": "contact@yourbusiness.com",
+        "website": "https://yourbusiness.com"
     }
 }
