@@ -1,14 +1,14 @@
-# Facebook Messenger AI Integration
+# Castle Fun Center - Facebook Messenger AI Chatbot
 
-A Facebook Messenger chatbot integration system that connects Facebook Pages to AI engines for automated customer service responses. Built for enterprise use with comprehensive security, detailed logging, automated setup verification, and professional configuration management.
+A Facebook Messenger chatbot integration system for Castle Fun Center that connects the Facebook Page to AI Engine for automated customer service responses. Built with comprehensive security, detailed logging, and professional configuration management.
 
-**Version**: 2.3 
+**Version**: 2.3  
 **Status**: All Security Audit Issues Resolved ✅  
 **Last Updated**: September 29, 2025
 
 ## Overview
 
-This system provides a complete, battle-tested solution for implementing AI-powered customer service through Facebook Messenger. It bridges Facebook's Messenger Platform with WordPress AI Engine plugin, enabling businesses to automate customer interactions while maintaining conversation context and natural response patterns.
+This system provides a complete solution for implementing AI-powered customer service through Facebook Messenger for Castle Fun Center. It bridges Facebook's Messenger Platform with WordPress AI Engine plugin, enabling automated customer interactions while maintaining conversation context and natural response patterns.
 
 **What's New in v2.3:**
 - Enhanced error handling with detailed debugging information
@@ -86,8 +86,8 @@ The system consists of four core components:
 - AI Engine bearer token with appropriate permissions
 
 ### Optional but Recommended
-- SSH access for command-line setup verification
-- Log monitoring tools or log aggregation service
+- SSH access for command-line troubleshooting
+- Log monitoring tools
 - Backup solution for configuration files
 - Server monitoring for resource utilization
 
@@ -119,7 +119,7 @@ chown -R www-data:www-data .
 Access the administrative interface at `https://your-domain.com/config-editor.php`:
 
 - **Default password**: `changeme`
-- **IMPORTANT**: Change this password immediately after first login
+- **IMPORTANT**: Change this password immediately after first login for Castle Fun Center's security
 - The interface includes CSRF protection and secure session management
 
 ## Configuration Guide
@@ -154,7 +154,7 @@ Access the administrative interface at `https://your-domain.com/config-editor.ph
 5. Note the full API endpoint URL
 
 #### Connection Parameters
-- **API URL**: `https://yourdomain.com/wp-json/mwai/v1/simpleChatbotQuery`
+- **API URL**: `https://thecastlefuncenter.com/wp-json/mwai/v1/simpleChatbotQuery`
 - **Bearer Token**: Authentication token from AI Engine plugin settings
 - **Bot ID**: Identifier for specific chatbot configuration (usually "default")
 - **Timeout**: Request timeout in seconds (recommended: 25-60, default: 60)
@@ -223,12 +223,12 @@ if (verify_facebook_signature($input, $app_secret)) {
 ```
 
 ### AI Engine Communication
-Communication with WordPress AI Engine follows this pattern:
+Communication with Castle Fun Center's WordPress AI Engine follows this pattern:
 
 ```json
 {
     "prompt": "user_message + knowledge_base_instruction",
-    "botId": "configured_bot_id",
+    "botId": "default",
     "chatId": "fb_1234567890"
 }
 ```
@@ -362,12 +362,12 @@ The included chat demo (`index.php`) provides:
 - Conversation memory testing (uses session ID for chatId)
 - Error condition simulation and handling
 
-**Best Practice**: Always test with `index.php` before attempting Facebook integration.
+**Best Practice**: Always test with `index.php` before attempting Facebook integration. This ensures Castle Fun Center's AI responses are working correctly.
 
 ### Testing Sequence
 Follow this sequence for successful deployment:
 
-1. **Config Validation*: Login to `config-editor.php`, verify all settings
+1. **Config Validation**: Login to `config-editor.php`, verify all settings
 2. **Connection Test**: Click "Test Connection" button in AI Engine tab
 3. **Demo Chat**: Test conversation flow with `index.php`
 4. **Webhook Verification**: Verify webhook in Facebook Developer Console
@@ -387,7 +387,7 @@ See the included **Pre-Demo Deployment Checklist** artifact for comprehensive ve
 
 ## Deployment Considerations
 
-### Readiness Checklist
+### Deployment Readiness Checklist
 - [ ] PHP-FPM is available (recommended for optimal Facebook response times)
 - [ ] SSL certificate installed and verified (required by Facebook)
 - [ ] Default administrative password changed to strong password
@@ -415,7 +415,7 @@ The system automatically detects and uses these headers:
 **Manual Verification**: Always verify the displayed webhook URL is your public HTTPS URL before entering it in Facebook Developer Console.
 
 ### Performance Optimization
-- **PHP-FPM**: Essential for `fastcgi_finish_request()` support
+- **PHP-FPM**: Recommended for `fastcgi_finish_request()` support
 - **Memory Limit**: Increase if handling large AI responses (256MB recommended)
 - **Timeout Values**: Balance between user experience and resource usage
 - **Rate Limiting**: Tune based on actual usage patterns
@@ -475,7 +475,7 @@ grep "Failed to connect" fb_ai_*.log
 5. Validate network connectivity and DNS resolution
 6. Consider increasing PHP `max_execution_time`
 
-**Critical**: Without PHP-FPM, the script must wait for complete AI response before replying to Facebook, causing timeouts.
+**Impact**: Bot will work but may timeout with Facebook for slow AI responses
 
 **Logs to Check**:
 ```bash
@@ -652,8 +652,8 @@ EOF
 ## Support and Documentation
 
 ### Included Documentation
-- **Quick Start Guide**: 5-minute setup process
-- **Pre-Demo Deployment Checklist**: Comprehensive 10-section verification guide
+- **Quick Start Guide**: 5-minute setup process for Castle Fun Center
+- **Pre-Demo Deployment Checklist**: Comprehensive verification guide
 - **Summary of Changes**: Detailed v2.3 improvements documentation
 
 ### Log File Locations
@@ -697,7 +697,6 @@ Typical performance metrics:
 | AI Engine Response Time | 1-5s | Varies by query complexity |
 | Memory Usage | 10-20MB | Per request, includes PHP overhead |
 | Disk I/O | Minimal | File-based rate limiting |
-| Concurrent Users | 100+ | Limited by server resources |
 
 **Optimization Tips**:
 - Use PHP 8.x for improved performance
@@ -708,7 +707,7 @@ Typical performance metrics:
 
 ## Changelog
 
-### Version 2.3 (September 29, 2025) 
+### Version 2.3 (September 29, 2025)
 **Security Audit Issues Resolved**:
 - ✅ Removed all error suppression for transparent debugging
 - ✅ Added PHP-FPM availability detection and warning
@@ -728,7 +727,7 @@ Typical performance metrics:
 - Enhanced security with CSRF protection
 - Better debugging with detailed error messages
 - Improved configuration validation
-- error handling
+- Enhanced error handling
 
 ### Version 2.2 (Previous)
 - Added `processing_message_min_length` setting
@@ -750,7 +749,7 @@ Typical performance metrics:
 
 **Author**: Seth Morrow  
 **Organization**: Castle Fun Center  
-**Version**: 2.3 
+**Version**: 2.3  
 **License**: MIT License  
 **Copyright**: 2025 Castle Fun Center
 
@@ -762,3 +761,9 @@ Typical performance metrics:
 - Security researchers for audit feedback and improvements
 
 ---
+
+**Status**: ✅ Ready for Deployment  
+**Security Audit**: ✅ All Issues Resolved  
+**Documentation**: ✅ Complete Deployment and Maintenance Guides
+
+For questions, issues, or support regarding Castle Fun Center's AI chatbot, please contact the development team.
