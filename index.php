@@ -1,99 +1,75 @@
 <?php
-/**
- * AI Engine Chatbot Demo - Using shared config.json
- * This provides a preview of how the Facebook bot will respond
- * 
- * VERSION: 2.3 - Production-Ready
- * FIXES:
- * - Removed confusing comments about parameter changes
- * - Enhanced error handling
- * - Improved user feedback
- */
-
 session_start();
 
-function load_config() {
-    $config_file = __DIR__ . '/config.json';
-    if (!file_exists($config_file)) {
-        return false;
-    }
-    
-    $config = json_decode(file_get_contents($config_file), true);
-    if (json_last_error() !== JSON_ERROR_NONE) {
-        error_log("Invalid JSON in config.json: " . json_last_error_msg());
-        return false;
-    }
-    
-    return $config;
+// --- CONFIGURATION ---
+$config_file_path = __DIR__ . '/config.json';
+// SHA256 hash for the password "ZoeBotPassword123!@#"
+$hashed_password = '6a918945c114d90ca575b23a57682ce22b2593badbd7c9e446f14ff578420809';
+// --- END CONFIGURATION ---
+
+function is_logged_in() {
+    return isset($_SESSION['bot_toggle_logged_in']) && $_SESSION['bot_toggle_logged_in'] === true;
 }
 
-$config = load_config();
-if (!$config) {
-    die('Configuration error. Please check config.json or run config-editor.php first.');
+// Handle Logout
+if (isset($_GET['logout'])) {
+    session_unset();
+    session_destroy();
+    header('Location: index.php');
+    exit;
 }
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'chat') {
+// Handle Login Attempt
+$login_error = '';
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['password'])) {
+    if (hash('sha256', $_POST['password']) === $hashed_password) {
+        $_SESSION['bot_toggle_logged_in'] = true;
+        header('Location: index.php');
+        exit;
+    } else {
+        $login_error = 'Invalid Password';
+    }
+}
+
+// Handle AJAX Toggle Request
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'toggle_bot') {
     header('Content-Type: application/json');
-    
-    $user_message = trim($_POST['message'] ?? '');
-    if (empty($user_message)) {
-        echo json_encode(['error' => 'Message cannot be empty']);
+    if (!is_logged_in()) {
+        echo json_encode(['success' => false, 'error' => 'Not authenticated']);
         exit;
     }
-    
-    $enhanced_prompt = $user_message . trim($config['prompts']['knowledge_base_instruction']);
-    
-    // Use chatId for conversation memory (matches facebook-webhook.php)
-    $data = [
-        'prompt' => $enhanced_prompt,
-        'botId' => $config['ai_engine']['bot_id'],
-        'chatId' => 'demo_' . session_id()
-    ];
-    
-    $options = [
-        'http' => [
-            'header' => [
-                'Content-Type: application/json',
-                'Authorization: Bearer ' . $config['ai_engine']['bearer_token']
-            ],
-            'method' => 'POST',
-            'content' => json_encode($data),
-            'timeout' => $config['ai_engine']['timeout'],
-            'ignore_errors' => true
-        ]
-    ];
-    
-    // Retry logic matching webhook
-    $ai_reply = null;
-    for ($i = 0; $i < $config['settings']['max_retries']; $i++) {
-        $context = stream_context_create($options);
-        $response = file_get_contents($config['ai_engine']['url'], false, $context);
-        
-        if ($response !== FALSE) {
-            $result = json_decode($response, true);
-            
-            if (json_last_error() === JSON_ERROR_NONE && !empty($result['data']) && is_string($result['data'])) {
-                $ai_reply = $result['data'];
-                
-                if (strlen($ai_reply) > $config['settings']['message_char_limit']) {
-                    $ai_reply = substr($ai_reply, 0, $config['settings']['message_char_limit']) 
-                              . ' ' . $config['prompts']['truncated_message'];
-                }
-                break;
-            }
-        }
-        
-        if ($i < $config['settings']['max_retries'] - 1) {
-            sleep(1);
-        }
+
+    if (!file_exists($config_file_path) || !is_readable($config_file_path) || !is_writable($config_file_path)) {
+         echo json_encode(['success' => false, 'error' => 'Config file error. Check permissions.']);
+         exit;
     }
-    
-    if ($ai_reply) {
-        echo json_encode(['reply' => trim($ai_reply)]);
+
+    $config = json_decode(file_get_contents($config_file_path), true);
+    if ($config === null) {
+        echo json_encode(['success' => false, 'error' => 'Could not parse config.json.']);
+        exit;
+    }
+
+    $new_state = isset($_POST['is_enabled']) && $_POST['is_enabled'] === 'true';
+    $config['ai_engine']['bot_enabled'] = $new_state;
+
+    if (file_put_contents($config_file_path, json_encode($config, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES))) {
+        echo json_encode(['success' => true, 'newState' => $new_state]);
     } else {
-        echo json_encode(['error' => $config['prompts']['error_message']]);
+        echo json_encode(['success' => false, 'error' => 'Failed to write to config file.']);
     }
     exit;
+}
+
+// Get initial state for a logged-in user
+$initial_bot_state = false;
+if (is_logged_in()) {
+    if (file_exists($config_file_path) && is_readable($config_file_path)) {
+        $config = json_decode(file_get_contents($config_file_path), true);
+        if (isset($config['ai_engine']['bot_enabled'])) {
+            $initial_bot_state = (bool)$config['ai_engine']['bot_enabled'];
+        }
+    }
 }
 ?>
 <!DOCTYPE html>
@@ -101,292 +77,246 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?= htmlspecialchars($config['contact']['business_name']) ?> - AI Chat Demo</title>
+    <title>Bot Control</title>
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body {
+        :root {
+            --bg-color: #111827;
+            --card-color: #1f2937;
+            --text-color: #f3f4f6;
+            --text-muted: #9ca3af;
+            --accent-green: #22c55e;
+            --accent-red: #ef4444;
+            --border-color: #374151;
+        }
+        html, body {
+            height: 100%;
+            margin: 0;
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
-            height: 100vh; display: flex; align-items: center; justify-content: center; padding: 0; margin: 0;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
-        .chat-container {
-            width: 100%; max-width: 100%; height: 100vh; background: #1e1e2e; border-radius: 0;
-            box-shadow: none; border: none; display: flex; flex-direction: column; overflow: hidden;
+        .container {
+            background-color: var(--card-color);
+            border-radius: 1rem;
+            padding: 2.5rem;
+            border: 1px solid var(--border-color);
+            box-shadow: 0 20px 25px -5px rgba(0,0,0,0.3), 0 10px 10px -5px rgba(0,0,0,0.2);
+            text-align: center;
+            width: 90%;
+            max-width: 400px;
+            position: relative;
         }
-        .chat-header {
-            background: #1a1f2e; color: white; padding: 20px; text-align: center; position: relative;
-            border-bottom: 1px solid #2a2a3e;
+        .logout-btn {
+            position: absolute;
+            top: 1rem;
+            right: 1rem;
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            font-size: 1.5rem;
+            line-height: 1;
+            text-decoration: none;
         }
-        .chat-header h1 { font-size: 1.5em; margin-bottom: 5px; color: #e2e8f0; }
-        .chat-header p { opacity: 0.7; font-size: 0.9em; color: #94a3b8; }
-        .chat-header .demo-badge {
-            background: rgba(59, 130, 246, 0.15); color: #6366f1; padding: 4px 12px; border-radius: 12px;
-            font-size: 0.8em; margin-top: 8px; display: inline-block; border: 1px solid rgba(59, 130, 246, 0.3);
+        h1 {
+            margin: 0 0 0.5rem 0;
+            font-size: 1.8rem;
         }
-        .admin-btn {
-            position: absolute; top: 20px; right: 20px; background: rgba(59, 130, 246, 0.15);
-            color: #6366f1; padding: 8px 16px; border-radius: 20px; text-decoration: none;
-            font-size: 0.85em; font-weight: 500; transition: all 0.3s ease;
-            border: 1px solid rgba(59, 130, 246, 0.3); display: flex; align-items: center; gap: 6px;
+        #status-text {
+            font-size: 1.25rem;
+            margin-bottom: 2rem;
+            font-weight: 500;
+            transition: color 0.3s ease;
         }
-        .admin-btn:hover {
-            background: rgba(59, 130, 246, 0.25); transform: translateY(-1px);
-            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+        #status-text.enabled { color: var(--accent-green); }
+        #status-text.disabled { color: var(--accent-red); }
+
+        /* Giant Toggle Switch */
+        .toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 120px;
+            height: 60px;
         }
-        .chat-messages { flex: 1; padding: 20px; overflow-y: auto; background: #181825; }
-        .message { margin-bottom: 15px; display: flex; align-items: flex-start; }
-        .message.user { justify-content: flex-end; }
-        .message-bubble {
-            max-width: 80%; padding: 12px 16px; border-radius: 18px; font-size: 14px;
-            line-height: 1.4; white-space: pre-wrap;
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
         }
-        .message.user .message-bubble {
-            background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
-            color: white; border-bottom-right-radius: 4px;
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: var(--accent-red);
+            transition: .4s;
+            border-radius: 60px;
         }
-        .message.bot .message-bubble {
-            background: #2a2a3e; color: #e5e5e5; border-bottom-left-radius: 4px; border: 1px solid #3a3a4e;
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 50px;
+            width: 50px;
+            left: 5px;
+            bottom: 5px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
         }
-        .chat-input { padding: 20px; background: #1e1e2e; border-top: 1px solid #2a2a3e; }
-        .input-group { display: flex; gap: 10px; }
-        #messageInput {
-            flex: 1; padding: 12px 16px; border: 2px solid #2a2a3e; border-radius: 25px;
-            font-size: 14px; outline: none; transition: border-color 0.3s; background: #25253a; color: #e5e5e5;
+        input:checked + .slider {
+            background-color: var(--accent-green);
         }
-        #messageInput:focus { border-color: #6366f1; }
-        #messageInput::placeholder { color: #9ca3af; }
-        #sendButton {
-            padding: 12px 20px; background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
-            color: white; border: none; border-radius: 25px; cursor: pointer; font-size: 14px;
-            transition: all 0.3s;
+        input:checked + .slider:before {
+            transform: translateX(60px);
         }
-        #sendButton:hover:not(:disabled) {
-            background: linear-gradient(135deg, #5855eb 0%, #7c3aed 100%); transform: translateY(-1px);
+
+        /* Login Form */
+        .login-form input {
+            width: 100%;
+            padding: 0.75rem 1rem;
+            font-size: 1rem;
+            border-radius: 0.5rem;
+            border: 1px solid var(--border-color);
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin-bottom: 1rem;
         }
-        #sendButton:disabled { background: #4a4a5e; cursor: not-allowed; transform: none; }
-        .typing-indicator {
-            display: none; padding: 10px 16px; background: #2a2a3e; border: 1px solid #3a3a4e;
-            border-radius: 18px; border-bottom-left-radius: 4px; max-width: 80px; margin-bottom: 15px;
-        }
-        .typing-dots { display: flex; gap: 4px; }
-        .typing-dots span {
-            width: 8px; height: 8px; background: #9ca3af; border-radius: 50%;
-            animation: typing 1.4s infinite ease-in-out;
-        }
-        .typing-dots span:nth-child(1) { animation-delay: -0.32s; }
-        .typing-dots span:nth-child(2) { animation-delay: -0.16s; }
-        @keyframes typing {
-            0%, 80%, 100% { transform: scale(0.8); opacity: 0.5; }
-            40% { transform: scale(1); opacity: 1; }
+        .login-form button {
+            width: 100%;
+            padding: 0.75rem 1rem;
+            font-size: 1rem;
+            font-weight: 600;
+            border-radius: 0.5rem;
+            border: none;
+            background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+            color: white;
+            cursor: pointer;
         }
         .error-message {
-            background: #7f1d1d; color: #fecaca; padding: 10px; border-radius: 5px;
-            margin-bottom: 15px; font-size: 14px; border: 1px solid #991b1b;
+            color: var(--accent-red);
+            margin-top: 1rem;
         }
-        .info-panel {
-            background: linear-gradient(135deg, #1e293b 0%, #334155 100%); border: 1px solid #475569;
-            border-radius: 12px; padding: 15px; margin-bottom: 15px; font-size: 12px;
-            color: #cbd5e1; box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        
+        #feedback-message {
+            margin-top: 1.5rem;
+            height: 20px;
+            font-weight: 500;
+            color: var(--text-muted);
         }
-        .info-panel h3 {
-            color: #f1f5f9; margin-bottom: 10px; font-size: 13px; display: flex; align-items: center; gap: 6px;
+
+        .admin-link {
+            display: inline-block;
+            margin-top: 2rem;
+            font-size: 0.9rem;
+            color: var(--text-muted);
+            text-decoration: none;
+            border: 1px solid var(--border-color);
+            padding: 0.5rem 1rem;
+            border-radius: 0.5rem;
+            transition: all 0.2s ease;
         }
-        .info-panel .config-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; }
-        .config-item {
-            background: rgba(30, 41, 59, 0.5); padding: 8px 10px; border-radius: 6px; border: 1px solid #475569;
+        .admin-link:hover {
+            color: var(--text-color);
+            background-color: var(--border-color);
         }
-        .config-label {
-            color: #94a3b8; font-weight: 500; font-size: 10px; text-transform: uppercase;
-            letter-spacing: 0.5px; margin-bottom: 3px; display: block;
-        }
-        .config-value {
-            color: #e2e8f0; font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
-            font-size: 11px; word-break: break-all;
-        }
-        .status-indicator {
-            display: inline-flex; align-items: center; gap: 4px; background: rgba(16, 185, 129, 0.1);
-            color: #10b981; padding: 2px 8px; border-radius: 15px; font-size: 10px;
-            font-weight: 500; border: 1px solid rgba(16, 185, 129, 0.3);
-        }
-        .status-indicator::before {
-            content: ''; width: 4px; height: 4px; background: #10b981; border-radius: 50%;
-            animation: pulse-dot 2s ease-in-out infinite;
-        }
-        @keyframes pulse-dot { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
-        @media (max-width: 600px) {
-            .admin-btn { position: static; margin-bottom: 10px; align-self: flex-start; }
-            .chat-header { display: flex; flex-direction: column; align-items: center; }
-            body { padding: 0; }
-            .chat-container { height: 100vh; border-radius: 0; max-width: none; }
-        }
-        .chat-messages::-webkit-scrollbar { width: 6px; }
-        .chat-messages::-webkit-scrollbar-track { background: #1e1e2e; }
-        .chat-messages::-webkit-scrollbar-thumb { background: #4a4a5e; border-radius: 3px; }
-        .chat-messages::-webkit-scrollbar-thumb:hover { background: #5a5a6e; }
     </style>
 </head>
 <body>
-    <div class="chat-container">
-        <div class="chat-header">
-            <a href="config-editor.php" class="admin-btn">⚙️ Admin Panel</a>
-            <h1><?= htmlspecialchars($config['contact']['business_name']) ?> AI</h1>
-            <p>Facebook Messenger Bot Preview</p>
-            <div class="demo-badge">DEMO MODE</div>
-        </div>
-        
-        <div class="chat-messages" id="chatMessages">
-            <div class="info-panel">
-                <h3>⚙️ Config <span class="status-indicator">Live</span></h3>
-                <div class="config-grid">
-                    <div class="config-item">
-                        <span class="config-label">Engine</span>
-                        <span class="config-value"><?= htmlspecialchars(parse_url($config['ai_engine']['url'], PHP_URL_HOST)) ?></span>
-                    </div>
-                    <div class="config-item">
-                        <span class="config-label">Bot ID</span>
-                        <span class="config-value"><?= htmlspecialchars($config['ai_engine']['bot_id']) ?></span>
-                    </div>
-                    <div class="config-item">
-                        <span class="config-label">Timeout</span>
-                        <span class="config-value"><?= htmlspecialchars($config['ai_engine']['timeout']) ?>s</span>
-                    </div>
-                    <div class="config-item">
-                        <span class="config-label">Limit</span>
-                        <span class="config-value"><?= htmlspecialchars($config['settings']['message_char_limit']) ?></span>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="message bot">
-                <div class="message-bubble"><?= htmlspecialchars(trim($config['prompts']['welcome_message'])) ?></div>
-            </div>
-        </div>
-        
-        <div class="typing-indicator" id="typingIndicator">
-            <div class="typing-dots"><span></span><span></span><span></span></div>
-        </div>
-        
-        <div class="chat-input">
-            <div class="input-group">
-                <input type="text" id="messageInput" placeholder="Type your message..." maxlength="500">
-                <button id="sendButton">Send</button>
-            </div>
-        </div>
+
+    <div class="container">
+        <?php if (is_logged_in()): ?>
+            <a href="?logout=1" class="logout-btn" title="Logout">&times;</a>
+            <h1>Bot Status Control</h1>
+            <p id="status-text"></p>
+            <label class="toggle-switch">
+                <input type="checkbox" id="bot-toggle" <?php echo $initial_bot_state ? 'checked' : ''; ?>>
+                <span class="slider"></span>
+            </label>
+            <p id="feedback-message">&nbsp;</p>
+            <a href="config-editor.php" class="admin-link">Go to Full Admin Panel</a>
+        <?php else: ?>
+            <h1>Emergency Access</h1>
+            <p style="color: var(--text-muted); margin-bottom: 1.5rem;">Enter the password to control the bot.</p>
+            <form method="POST" class="login-form">
+                <input type="password" name="password" placeholder="Password" required autofocus>
+                <button type="submit">Login</button>
+            </form>
+            <?php if ($login_error): ?>
+                <p class="error-message"><?= htmlspecialchars($login_error) ?></p>
+            <?php endif; ?>
+        <?php endif; ?>
     </div>
 
+    <?php if (is_logged_in()): ?>
     <script>
-        const chatMessages = document.getElementById('chatMessages');
-        const messageInput = document.getElementById('messageInput');
-        const sendButton = document.getElementById('sendButton');
-        const typingIndicator = document.getElementById('typingIndicator');
-        
-        const config = <?= json_encode([
-            'business_name' => $config['contact']['business_name'],
-            'char_limit' => $config['settings']['message_char_limit'],
-            'error_message' => $config['prompts']['error_message'],
-            'text_only_message' => $config['prompts']['text_only_message']
-        ]) ?>;
-        
-        function addMessage(content, isUser = false) {
-            const messageDiv = document.createElement('div');
-            messageDiv.className = `message ${isUser ? 'user' : 'bot'}`;
-            
-            const bubbleDiv = document.createElement('div');
-            bubbleDiv.className = 'message-bubble';
-            bubbleDiv.textContent = content.trim();
-            
-            messageDiv.appendChild(bubbleDiv);
-            chatMessages.appendChild(messageDiv);
-            chatMessages.scrollTop = chatMessages.scrollHeight;
-        }
-        
-        function showError(message) {
-            const errorDiv = document.createElement('div');
-            errorDiv.className = 'error-message';
-            errorDiv.textContent = message;
-            chatMessages.appendChild(errorDiv);
-            chatMessages.scrollTop = chatMessages.scrollHeight;
-        }
-        
-        function showTyping(show = true) {
-            typingIndicator.style.display = show ? 'block' : 'none';
-            if (show) chatMessages.scrollTop = chatMessages.scrollHeight;
-        }
-        
-        async function sendMessage() {
-            const message = messageInput.value.trim();
-            if (!message) return;
-            
-            if (message.length > config.char_limit) {
-                showError(`Message too long. Maximum ${config.char_limit} characters allowed.`);
-                return;
+        const toggle = document.getElementById('bot-toggle');
+        const statusText = document.getElementById('status-text');
+        const feedbackMessage = document.getElementById('feedback-message');
+
+        function updateStatusUI(isEnabled) {
+            if (isEnabled) {
+                statusText.textContent = 'Bot is ENABLED';
+                statusText.className = 'enabled';
+            } else {
+                statusText.textContent = 'Bot is DISABLED';
+                statusText.className = 'disabled';
             }
+        }
+
+        async function handleToggleChange() {
+            const isEnabled = toggle.checked;
+            updateStatusUI(isEnabled);
+            feedbackMessage.textContent = 'Saving...';
             
-            addMessage(message, true);
-            messageInput.value = '';
-            
-            sendButton.disabled = true;
-            messageInput.disabled = true;
-            showTyping(true);
-            
+            const formData = new FormData();
+            formData.append('action', 'toggle_bot');
+            formData.append('is_enabled', isEnabled);
+
             try {
-                const formData = new FormData();
-                formData.append('action', 'chat');
-                formData.append('message', message);
-                
-                const response = await fetch(window.location.href, {
+                const response = await fetch('', { // Post to the same page
                     method: 'POST',
                     body: formData
                 });
                 
                 const result = await response.json();
-                
-                if (result.error) {
-                    showError('Error: ' + result.error);
+
+                if (result.success) {
+                    feedbackMessage.textContent = 'Status updated successfully!';
+                    // Update UI again to be sure it matches the server state
+                    updateStatusUI(result.newState);
+                    toggle.checked = result.newState;
                 } else {
-                    addMessage(result.reply);
+                    feedbackMessage.textContent = `Error: ${result.error || 'Unknown error'}`;
+                    // Revert the toggle on failure
+                    toggle.checked = !isEnabled;
+                    updateStatusUI(!isEnabled);
                 }
-                
             } catch (error) {
-                showError(config.error_message);
-                console.error('Chat error:', error);
-            } finally {
-                showTyping(false);
-                sendButton.disabled = false;
-                messageInput.disabled = false;
-                messageInput.focus();
+                feedbackMessage.textContent = 'Network error. Could not save.';
+                // Revert the toggle on failure
+                toggle.checked = !isEnabled;
+                updateStatusUI(!isEnabled);
             }
+            
+            setTimeout(() => {
+                feedbackMessage.innerHTML = '&nbsp;';
+            }, 3000);
         }
-        
-        sendButton.addEventListener('click', sendMessage);
-        
-        messageInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                sendMessage();
-            }
+
+        // Initial UI setup
+        document.addEventListener('DOMContentLoaded', () => {
+            updateStatusUI(toggle.checked);
+            toggle.addEventListener('change', handleToggleChange);
         });
-        
-        messageInput.addEventListener('input', () => {
-            const remaining = config.char_limit - messageInput.value.length;
-            if (remaining < 50) {
-                messageInput.style.borderColor = remaining < 0 ? '#ef4444' : '#f59e0b';
-            } else {
-                messageInput.style.borderColor = '#2a2a3e';
-            }
-        });
-        
-        messageInput.focus();
-        
-        console.log('🤖 Facebook Messenger Bot Demo');
-        console.log('This preview shows how your bot will respond on Facebook.');
-        console.log('Business:', config.business_name);
-        console.log('Character limit:', config.char_limit);
-        console.log('\nSample questions to try:');
-        console.log('- What are your hours?');
-        console.log('- Tell me about your activities');
-        console.log('- How much does it cost?');
-        console.log('- Do you have birthday parties?');
     </script>
+    <?php endif; ?>
+
 </body>
 </html>
+
+

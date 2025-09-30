@@ -1,16 +1,12 @@
 <?php
 /**
  * Facebook Messenger AI Integration - Main Webhook Handler
- * 
- * VERSION: 2.3 - Production-Ready with Enhanced Error Handling
- * FIXES:
- * - Removed error suppression for better debugging
- * - Added fastcgi_finish_request() availability check
- * - Enhanced error logging with detailed context
- * - Improved file permission checks
- * - Better error messages for troubleshooting
- * 
- * @package FacebookMessengerAI
+ * * VERSION: 2.5 - Silent Disable Update
+ * UPDATES:
+ * - Removed maintenance message when bot is disabled. The bot now silently ignores messages.
+ * - Logs when a message is ignored due to the bot's disabled state.
+ * - Maintains webhook verification even when bot is disabled
+ * * @package FacebookMessengerAI
  * @author Seth Morrow
  * @copyright 2025 Castle Fun Center
  * @license MIT
@@ -48,11 +44,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
     $hub_mode = $_GET['hub_mode'] ?? '';
     
     if ($hub_mode === 'subscribe' && $hub_verify_token === $config['facebook']['verify_token']) {
-        log_message("✓ Webhook verified successfully", $config);
+        log_message("✔ Webhook verified successfully", $config);
         echo $hub_challenge;
         exit;
     } else {
-        log_message("✗ Webhook verification failed. Token mismatch.", $config);
+        log_message("✘ Webhook verification failed. Token mismatch.", $config);
         log_message("Expected: " . $config['facebook']['verify_token'] . " | Received: " . $hub_verify_token, $config);
         http_response_code(403);
         echo 'Forbidden';
@@ -72,7 +68,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // ========================================================================
     
     if (!verify_facebook_signature($input, $config['facebook']['app_secret'])) {
-        log_message("✗ Invalid Facebook signature - possible security breach attempt", $config);
+        log_message("✘ Invalid Facebook signature - possible security breach attempt", $config);
         http_response_code(401);
         echo 'Unauthorized';
         exit;
@@ -98,7 +94,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $data = json_decode($input, true);
     
     if (json_last_error() !== JSON_ERROR_NONE) {
-        log_message("✗ Invalid JSON received from Facebook: " . json_last_error_msg(), $config);
+        log_message("✘ Invalid JSON received from Facebook: " . json_last_error_msg(), $config);
         exit;
     }
     
@@ -141,6 +137,18 @@ function load_config() {
         return false;
     }
     
+    // Ensure bot_enabled exists (backwards compatibility)
+    if (!isset($config['ai_engine']['bot_enabled'])) {
+        $config['ai_engine']['bot_enabled'] = true;
+        file_put_contents($config_file, json_encode($config, JSON_PRETTY_PRINT));
+    }
+    
+    // Ensure bot_disabled_message exists
+    if (!isset($config['prompts']['bot_disabled_message'])) {
+        $config['prompts']['bot_disabled_message'] = "🚫 Our AI assistant is temporarily unavailable for maintenance. Please contact us directly or try again later.";
+        file_put_contents($config_file, json_encode($config, JSON_PRETTY_PRINT));
+    }
+    
     return $config;
 }
 
@@ -150,7 +158,8 @@ function get_default_config() {
             'url' => 'https://yourdomain.com/wp-json/mwai/v1/simpleChatbotQuery',
             'bearer_token' => 'your_token_here',
             'bot_id' => 'default',
-            'timeout' => 25
+            'timeout' => 25,
+            'bot_enabled' => true  // New field for bot enable/disable
         ],
         'facebook' => [
             'verify_token' => 'verify_token_' . bin2hex(random_bytes(8)),
@@ -175,7 +184,8 @@ function get_default_config() {
             'welcome_message' => "Welcome! I'm your AI assistant. How can I help you today?",
             'error_message' => "I'm having trouble right now. Please try again later.",
             'text_only_message' => "I can only handle text messages right now.",
-            'truncated_message' => "... (message truncated)"
+            'truncated_message' => "... (message truncated)",
+            'bot_disabled_message' => "🚫 Our AI assistant is temporarily unavailable for maintenance. Please contact us directly or try again later."  // New field
         ],
         'contact' => [
             'business_name' => 'Your Business',
@@ -190,17 +200,31 @@ function process_message($messaging_event, $config) {
     $sender_id = $messaging_event['sender']['id'] ?? null;
     
     if (!$sender_id) {
-        log_message("✗ No sender ID found in messaging event", $config);
+        log_message("✘ No sender ID found in messaging event", $config);
         return;
     }
     
     // ========================================================================
-    // RATE LIMITING
+    // CHECK IF BOT IS ENABLED
+    // ========================================================================
+    
+    $bot_enabled = $config['ai_engine']['bot_enabled'] ?? true;
+    
+    if (!$bot_enabled) {
+        // Bot is disabled. Log the event and do not respond.
+        if (isset($messaging_event['message']) || isset($messaging_event['postback'])) {
+            log_message(" Bot disabled - message ignored from user $sender_id", $config);
+        }
+        return; // Exit the function immediately
+    }
+    
+    // ========================================================================
+    // RATE LIMITING (only if bot is enabled)
     // ========================================================================
     
     if (!check_rate_limit($sender_id, $config)) {
         send_facebook_message($sender_id, "Please slow down! Too many messages.", $config);
-        log_message("✗ Rate limit exceeded for user $sender_id", $config);
+        log_message("✘ Rate limit exceeded for user $sender_id", $config);
         return;
     }
     
@@ -254,7 +278,7 @@ function process_message($messaging_event, $config) {
             log_message("Sent to $sender_id: " . substr($ai_response, 0, 100), $config);
         } else {
             send_facebook_message($sender_id, $config['prompts']['error_message'], $config);
-            log_message("✗ Failed to get AI response for $sender_id", $config);
+            log_message("✘ Failed to get AI response for $sender_id", $config);
         }
     }
     
@@ -321,7 +345,7 @@ function get_ai_response($user_text, $sender_id, $config) {
             $status_code = $match[1] ?? 'unknown';
             
             if ($status_code != 200) {
-                log_message("✗ AI Engine returned HTTP $status_code (attempt " . ($i + 1) . ")", $config);
+                log_message("✘ AI Engine returned HTTP $status_code (attempt " . ($i + 1) . ")", $config);
                 log_message("Response: " . substr($response, 0, 200), $config);
             }
         }
@@ -330,7 +354,7 @@ function get_ai_response($user_text, $sender_id, $config) {
             $result = json_decode($response, true);
             
             if (json_last_error() !== JSON_ERROR_NONE) {
-                log_message("✗ Invalid JSON from AI Engine: " . json_last_error_msg(), $config);
+                log_message("✘ Invalid JSON from AI Engine: " . json_last_error_msg(), $config);
                 log_message("Raw response: " . substr($response, 0, 200), $config);
                 continue;
             }
@@ -346,12 +370,12 @@ function get_ai_response($user_text, $sender_id, $config) {
                 
                 return $ai_reply;
             } else {
-                log_message("✗ Invalid AI response format for $sender_id", $config);
+                log_message("✘ Invalid AI response format for $sender_id", $config);
                 log_message("Response structure: " . json_encode($result), $config);
             }
         } else {
             $error = error_get_last();
-            log_message("✗ AI Engine request failed (attempt " . ($i + 1) . "): " 
+            log_message("✘ AI Engine request failed (attempt " . ($i + 1) . "): " 
                        . ($error['message'] ?? 'Unknown error'), $config);
         }
         
@@ -362,7 +386,7 @@ function get_ai_response($user_text, $sender_id, $config) {
         }
     }
     
-    log_message("✗ All retry attempts exhausted for user $sender_id", $config);
+    log_message("✘ All retry attempts exhausted for user $sender_id", $config);
     return null;
 }
 
@@ -390,7 +414,7 @@ function send_facebook_message($recipient_id, $message_text, $config) {
     
     if ($response === FALSE) {
         $error = error_get_last();
-        log_message("✗ Failed to send message to $recipient_id: " 
+        log_message("✘ Failed to send message to $recipient_id: " 
                    . ($error['message'] ?? 'Unknown error'), $config);
         return false;
     }
@@ -398,7 +422,7 @@ function send_facebook_message($recipient_id, $message_text, $config) {
     // Check for Facebook API errors
     $result = json_decode($response, true);
     if (isset($result['error'])) {
-        log_message("✗ Facebook API error: " . json_encode($result['error']), $config);
+        log_message("✘ Facebook API error: " . json_encode($result['error']), $config);
         return false;
     }
     
@@ -429,7 +453,7 @@ function send_sender_action($recipient_id, $action, $config) {
     
     if ($response === FALSE) {
         $error = error_get_last();
-        log_message("✗ Failed to send $action to $recipient_id: " 
+        log_message("✘ Failed to send $action to $recipient_id: " 
                    . ($error['message'] ?? 'Unknown error'), $config);
         return false;
     }
@@ -455,14 +479,14 @@ function check_rate_limit($sender_id, $config) {
     
     if (!is_dir($cache_dir)) {
         if (!mkdir($cache_dir, 0755, true)) {
-            log_message("✗ Failed to create rate limit cache directory - check permissions", $config);
+            log_message("✘ Failed to create rate limit cache directory - check permissions", $config);
             return true;  // Fail open
         }
     }
     
     // Verify directory is writable
     if (!is_writable($cache_dir)) {
-        log_message("✗ Rate limit cache directory not writable - check permissions", $config);
+        log_message("✘ Rate limit cache directory not writable - check permissions", $config);
         return true;  // Fail open
     }
     
@@ -486,7 +510,7 @@ function check_rate_limit($sender_id, $config) {
     });
     
     if (count($timestamps) >= $max_messages) {
-        log_message("✗ Rate limit exceeded for user $sender_id (" 
+        log_message("✘ Rate limit exceeded for user $sender_id (" 
                    . count($timestamps) . "/$max_messages messages)", $config);
         return false;
     }
@@ -495,7 +519,7 @@ function check_rate_limit($sender_id, $config) {
     $success = file_put_contents($file_path, json_encode(array_values($timestamps)), LOCK_EX);
     
     if ($success === false) {
-        log_message("✗ Failed to write rate limit data for user $sender_id - check file permissions", $config);
+        log_message("✘ Failed to write rate limit data for user $sender_id - check file permissions", $config);
         return true;  // Fail open
     }
     

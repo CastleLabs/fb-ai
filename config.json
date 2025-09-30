@@ -1,39 +1,46 @@
 {
-    "ai_engine": {
-        "url": "https://yourdomain.com/wp-json/mwai/v1/simpleChatbotQuery",
-        "bearer_token": "REPLACE_WITH_YOUR_AI_ENGINE_BEARER_TOKEN",
-        "bot_id": "default",
-        "timeout": 60
-    },
-    "facebook": {
-        "verify_token": "REPLACE_WITH_CUSTOM_VERIFY_TOKEN",
-        "page_access_token": "REPLACE_WITH_FACEBOOK_PAGE_ACCESS_TOKEN",
-        "app_secret": "REPLACE_WITH_FACEBOOK_APP_SECRET",
-        "api_version": "v18.0"
-    },
-    "settings": {
-        "enable_logging": true,
-        "log_file_prefix": "fb_ai",
-        "message_char_limit": 1900,
-        "max_retries": 5,
-        "rate_limit_messages": 20,
-        "rate_limit_window": 60,
-        "show_processing_message": true,
-        "processing_message": "\u231b Just a moment...",
-        "processing_message_min_length": 0,
-        "admin_password": "$2y$10$8pmjUtrgYwZYfav2Uk63Q.ZpzTI0I7oDkl4jhcnGZQ5i.cRNKkqY."
-    },
-    "prompts": {
-        "knowledge_base_instruction": "IMPORTANT BOT INSTRUCTIONS: Please respond ONLY using information from your knowledge base. Craft a response formatted for facebook messenger that answers the customers questions succinctly, in a cheerful manner. ALWAYS check the current schedule and REAL CURRENT DATE AND TIME before suggesting a customer visits the facility. We do not want to invite customers to visit on days we are closed. ALWAYS REMEMBER to keep it formatted for messenger, not to use markdown links, and only send CLEAN URLS!",
-        "welcome_message": "This is a demo messenger conversation.",
-        "error_message": "We are currently unavailable. Please try again or contact us directly at the phone number below.",
-        "text_only_message": "I can only handle text messages right now. Please send me a text message!",
-        "truncated_message": "... (message truncated)"
-    },
-    "contact": {
-        "business_name": "Your Business Name",
-        "phone": "555-123-4567",
-        "email": "contact@yourbusiness.com",
-        "website": "https://yourbusiness.com"
-    }
+  "ai_engine": {
+    "url": "https://example.com/wp-json/mwai/v1/simpleChatbotQuery",
+    "bearer_token": "REDACTED_BEARER_TOKEN",
+    "bot_id": "default",
+    "timeout": 60,
+    "bot_enabled": true
+  },
+  "wordpress": {
+    "username": "REDACTED_USERNAME",
+    "password": "REDACTED_APP_PASSWORD",
+    "api_base_url": "https://example.com/wp-json/mwai/v1"
+  },
+  "facebook": {
+    "verify_token": "REDACTED_VERIFY_TOKEN",
+    "page_access_token": "REDACTED_PAGE_ACCESS_TOKEN",
+    "app_secret": "REDACTED_APP_SECRET",
+    "api_version": "v18.0"
+  },
+  "settings": {
+    "enable_logging": true,
+    "log_file_prefix": "fb_ai",
+    "message_char_limit": 2000,
+    "max_retries": 5,
+    "rate_limit_messages": 10,
+    "rate_limit_window": 60,
+    "show_processing_message": true,
+    "processing_message": "⌛ Just a moment...",
+    "processing_message_min_length": 0,
+    "admin_password": "REDACTED_PASSWORD_HASH"
+  },
+  "prompts": {
+    "knowledge_base_instruction": " IMPORTANT BOT INSTRUCTIONS: Our core objective is to deliver cheerful, succinct answers to customer questions, drawing only from the internal knowledge base. When communicating via Facebook Messenger, we must use short, mobile-friendly messages and incorporate emojis 😃 to maintain a friendly tone. Never use markdown links; post clean, full URLs only (e.g., https://www.example.com). Before suggesting a customer visit, ALWAYS check the current real-world date and time, verify the facility's schedule in the knowledge base, and NEVER invite a customer to visit on a closed day. Generally, we must answer questions directly and only mention the date and time if the user specifically asks for it. Replies can not be any longer than 2000 CHARS",
+    "welcome_message": "This is a demo messenger conversation. Type anything to the bot.",
+    "error_message": "We are currently unavailable. Please try again or contact Castle Fun Center directly at 845-469-2116.",
+    "text_only_message": "I can only handle text messages right now. Please send me a text message!",
+    "truncated_message": "... (message truncated)",
+    "bot_disabled_message": "🚫 Our AI assistant is temporarily unavailable for maintenance. Please contact us directly or try again later."
+  },
+  "contact": {
+    "business_name": "Castle Fun Center",
+    "phone": "845-469-2116",
+    "email": "thecastle@thecastlefuncenter.com",
+    "website": "https://thecastlefuncenter.com"
+  }
 }
